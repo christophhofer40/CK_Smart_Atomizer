@@ -973,7 +973,7 @@ public class Smart_Atomizer implements PlugIn
 				if(line == null)
 				{	break;}
 				String[] words = line.split("\\s+");
-				if(words.length >= 4)
+				if(words.length == 4)
 				{
 					String tag = words[0]; //Chemical Element or generic "ATOM"
 					if(tag.equals("ATOM") || tag.equals("C"))
@@ -4032,31 +4032,39 @@ public class Smart_Atomizer implements PlugIn
 					   "#RINGs list the ordered ATOM ids of their vertices" +	
 					   "#Every VIEW lists a LABEL, a TRANSLATION, a SKEWMATRIX,\n" +
 					   "#a rotation QUATERNION as well as all ATOMS with their id, x and y in image pixels and z=0.0");
-			pw.println("\n\nMASTER\t" + master_mesh.fatoms.length);
-			for(int i = 0; i < master_mesh.fatoms.length; ++i)
+			if(master_mesh != null && master_mesh.fatoms != null)
 			{
-				final Atom am = master_mesh.fatoms[i];
-				pw.println("ATOM\t" + am.id + "\t" + am.observers + "\t" + am.pos[0] + "\t" + am.pos[1] + "\t" + am.pos[2]);
-			}		   
-			pw.print('\n');
-			for(int i = 0; i < master_mesh.fbonds.length; ++i)
-			{
-				final Bond bondi = master_mesh.fbonds[i];
-				if( (bondi.left_ring == null) || (bondi.right_ring == null) ||
-				    (!bondi.left_ring.is_interior) || (!bondi.right_ring.is_interior) )
-				{	continue;}
-				
-				pw.println("BOND\t" + bondi.a1.id + "\t" + bondi.a2.id);
-			}
-			pw.print('\n');
-			for(int i = 0; i < master_mesh.frings.length; ++i)
-			{
-				final Ring ringi = master_mesh.frings[i];
-				pw.print("RING");
-				for(int j = 0; j < ringi.vertices.size(); ++j)
-				{	pw.print("\t"+ ringi.vertices.get(j).id);}
+				pw.println("\n\nMASTER\t" + master_mesh.fatoms.length);
+				for(int i = 0; i < master_mesh.fatoms.length; ++i)
+				{
+					final Atom am = master_mesh.fatoms[i];
+					pw.println("ATOM\t" + am.id + "\t" + am.observers + "\t" + am.pos[0] + "\t" + am.pos[1] + "\t" + am.pos[2]);
+				}		   
 				pw.print('\n');
-			}				
+				for(int i = 0; i < master_mesh.fbonds.length; ++i)
+				{
+					final Bond bondi = master_mesh.fbonds[i];
+					if( (bondi.left_ring == null) || (bondi.right_ring == null) ||
+						(!bondi.left_ring.is_interior) || (!bondi.right_ring.is_interior) )
+					{	continue;}
+					
+					pw.println("BOND\t" + bondi.a1.id + "\t" + bondi.a2.id);
+				}
+				pw.print('\n');
+				for(int i = 0; i < master_mesh.frings.length; ++i)
+				{
+					final Ring ringi = master_mesh.frings[i];
+					pw.print("RING");
+					for(int j = 0; j < ringi.vertices.size(); ++j)
+					{	pw.print("\t"+ ringi.vertices.get(j).id);}
+					pw.print('\n');
+				}				
+			}
+			else
+			{
+				pw.println("\n\nMASTER\t0");
+			}
+			
 			
 			
 			for(int v = 0; v<meshes.length; ++v)

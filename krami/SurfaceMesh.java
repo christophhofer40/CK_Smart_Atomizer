@@ -71,7 +71,7 @@ public class SurfaceMesh
 	public HexPixels imgHP = null;
 	
 	private boolean needs_update = true; //no atoms but we still need to update the fatoms ...
-	
+	public boolean keep_atom_masters = false;
 	
 	public int interior_bonds = -1;
 	public int num_unique_pairs = -1;
@@ -2954,10 +2954,12 @@ public class SurfaceMesh
 	public void refresh()
 	{
 		
-		if(!(needs_update))
+		if((!needs_update) && (!keep_atom_masters))
 		{	
 			return;
 		}
+		
+		
 		removefrom_master(); // abandon all master relations, the new topology might differ
 		
 		ArrayList<Atom> atoms2 = new ArrayList<Atom>(atoms.size());
@@ -3399,7 +3401,7 @@ public class SurfaceMesh
 		if(best_atom == null)
 		{
 			System.out.println("failed to pick any suitable 5-6-7 atom in mesh: " + impSlice);
-                        return null;
+			return null;
 		}
 		System.out.println("picked atom at x,y: " + (int)best_atom.pos[0] + "," + (int)best_atom.pos[1]);
 		signature = new Signature(best_atom);
@@ -3468,7 +3470,7 @@ public class SurfaceMesh
 			}
 			if(signature == null)
 			{	return;}
-			addto_master();
+			addto_master(false);
 			clean_up_master_mesh();
 		}
 		else
@@ -3481,174 +3483,197 @@ public class SurfaceMesh
 		
 	}
 	
-	private void addto_master()
+	public void addto_master(boolean force)
 	{
-		
-		Atom sa = signature.atom;
+		Atom sa = atoms.get(0);
 		Atom sam = sa.master;
-		Atom msa = master_mesh.signature.atom;
-		if( (sam != null) && (msa != null) && (sam != msa) )
-		{
-			System.out.println("Warning surfacemesh " + impSlice + " has changed primary matching atom to master_mesh");
-			removefrom_master();
-			//clean_up_master_mesh();
-			sam = null;
-		}
-		if( (sam == null) && (msa != null) )
-		{
-			sam = msa; //the actual sa.master is NOT affected by that
-			
-			int mi5 = -1;
-			int mi6 = -1;
-			int mi7 = -1;
-			int i5 = -1;
-			int i6 = -1;
-			int i7 = -1;
-			
-			for(int i = 0; i < 3; ++i) 
-			{
-				switch( msa.rings.get(i).vertices.size() ) 
-				{
-					case 5: mi5 = i; break;
-					case 6: mi6 = i; break;
-					case 7: mi7 = i; break;
-					default:
-				}
-				switch( sa.rings.get(i).vertices.size() ) 
-				{
-					case 5: i5 = i; break;
-					case 6: i6 = i; break;
-					case 7: i7 = i; break;
-					default:
-				}
-			}
-			Ring r5 = sa.rings.get(i5);
-			Ring mr5 = msa.rings.get(mi5);
-			Ring r7 = sa.rings.get(i7);
-			Ring mr7 = msa.rings.get(mi7);
-			Bond b57 = get_Bond(r5,r7);
-			Bond mb57 = master_mesh.get_Bond(mr5,mr7);
-			
-			r5.master = mr5;
-			r5.master.observers++;
-			b57.master = mb57;
-			b57.master.observers++;
-			sa.master = msa;
-			sa.master.observers++;
-			
-			Bond nb = sa.get_other_bond(r5,b57);
-			Bond mnb = msa.get_other_bond(mr5,mb57);
-			Atom na = nb.get_other_atom(sa);
-			Atom mna = mnb.get_other_atom(msa);
-			//TODO check that none of them is null
-			int num_bonds = 1;
-			int num_atoms = 1;
-			while( (nb.master == null) || (na.master == null) )
-			{
-				if(nb.master == null)
-				{
-					nb.master = mnb;
-					nb.master.observers++;
-					++num_bonds;
-				}
-				else if(nb.master != mnb)
-				{
-					System.out.println("Shit, nb.master != mnb while placing central 5-ring");
-				}
-				if(na.master == null)
-				{
-					na.master = mna;
-					na.master.observers++;
-					++num_atoms;
-				}
-				else if(na.master != mna)
-				{
-					System.out.println("Shit, na.master != mna while placing central 5-ring");
-				}
-				
-				nb = na.get_other_bond(r5,nb);
-				mnb = mna.get_other_bond(mr5,mnb);
-				na = nb.get_other_atom(na);
-				mna = mnb.get_other_atom(mna);	
-			} 
-			if( (num_bonds != 5) || (num_atoms != 5) )
-			{
-				System.out.println("Ups, just put a 5-ring and got " + num_atoms + " vertices and " + num_bonds + " edges" );
-			}
-			//push_atom_relations();
-			//r5.master.sort_all();
-			
-			if( !validate_master_ring(r5) )
-			{
-				System.out.println("Ups something went wrong identifieying the first ring on an already populated joined mesh");
-				r5.debug_info();
-				r5.master.debug_info();
-				removefrom_master(); 
-				//clean_up_master_mesh();
-				return;
-			}
-	
-		}
+		Atom msa = master_mesh.atoms.get(0);
 		
-		
-		if(sam == null) //provide a seeding ring that will contain the signature.atom anyways
-		{ //no checks here as it ought to be part of a valid signature anyways
-			if(master_mesh.atoms.size() > 0)
-			{
-				System.out.println("Error mastermesh containes atoms, but signature atoms did not lign up");
-			}
-			
-			Ring r0 = sa.rings.get(0); 
-			r0.master = master_mesh.put_ring();
-			r0.master.observers = 1;
-			r0.master.pos = Arrays.copyOf(r0.pos,3);
-			r0.master.is_interior = true;
-			r0.master.is_closed = true;
-			r0.master.radius = r0.radius;
-			for(int i = 0; i < r0.vertices.size(); ++i)
-			{
-				Atom ai = r0.vertices.get(i);
-				ai.master = master_mesh.put_atom();
-				ai.master.observers = 1;
-				ai.master.pos = Arrays.copyOf(ai.pos,3);
-				ai.master.is_interior = ai.is_interior;
-				ai.master.shortest_distsqr = ai.shortest_distsqr;
-				r0.master.vertices.add(ai.master);
-				ai.master.rings.add(r0.master);
-			}
-			for(int i = 0; i < r0.edges.size(); ++i)
-			{
-				Bond bi = r0.edges.get(i);
-				bi.master = master_mesh.put_bond();
-				bi.master.observers = 1;
-				bi.master.pos = Arrays.copyOf(bi.pos,3);
-				bi.master.is_interior = bi.is_interior;
-				r0.master.edges.add(bi.master);
-				bi.master.left_ring = r0.master;
-				bi.master.a1 = bi.a1.master;
-				bi.master.a2 = bi.a2.master;
-				
-				bi.master.a1.neighbors.add(bi.master.a2);
-				bi.master.a2.neighbors.add(bi.master.a1);
-				bi.master.a1.edges.add(bi.master);
-				bi.master.a2.edges.add(bi.master);	
-			}
-			//push_atom_relations();
-			r0.master.sort_all();
+		if(!force)
+		{
+			sa = signature.atom;
 			sam = sa.master;
-			//r0.master still has no neighbors	
-			
-			if( !validate_master_ring(r0) )
+			msa = master_mesh.signature.atom;
+			if( (sam != null) && (msa != null) && (sam != msa) )
 			{
-				System.out.println("Ups created a faulty seed ring - master pair");
-				r0.debug_info();
-				r0.master.debug_info();
-				removefrom_master(); 
+				System.out.println("Warning surfacemesh " + impSlice + " has changed primary matching atom to master_mesh");
+				removefrom_master();
 				//clean_up_master_mesh();
-				return;
+				sam = null;
+			}
+			if( (sam == null) && (msa != null) )
+			{
+				sam = msa; //the actual sa.master is NOT affected by that
+				
+				int mi5 = -1;
+				int mi6 = -1;
+				int mi7 = -1;
+				int i5 = -1;
+				int i6 = -1;
+				int i7 = -1;
+				
+				for(int i = 0; i < 3; ++i) 
+				{
+					switch( msa.rings.get(i).vertices.size() ) 
+					{
+						case 5: mi5 = i; break;
+						case 6: mi6 = i; break;
+						case 7: mi7 = i; break;
+						default:
+					}
+					switch( sa.rings.get(i).vertices.size() ) 
+					{
+						case 5: i5 = i; break;
+						case 6: i6 = i; break;
+						case 7: i7 = i; break;
+						default:
+					}
+				}
+				Ring r5 = sa.rings.get(i5);
+				Ring mr5 = msa.rings.get(mi5);
+				Ring r7 = sa.rings.get(i7);
+				Ring mr7 = msa.rings.get(mi7);
+				Bond b57 = get_Bond(r5,r7);
+				Bond mb57 = master_mesh.get_Bond(mr5,mr7);
+				
+				r5.master = mr5;
+				r5.master.observers++;
+				b57.master = mb57;
+				b57.master.observers++;
+				sa.master = msa;
+				sa.master.observers++;
+				
+				Bond nb = sa.get_other_bond(r5,b57);
+				Bond mnb = msa.get_other_bond(mr5,mb57);
+				Atom na = nb.get_other_atom(sa);
+				Atom mna = mnb.get_other_atom(msa);
+				//TODO check that none of them is null
+				int num_bonds = 1;
+				int num_atoms = 1;
+				while( (nb.master == null) || (na.master == null) )
+				{
+					if(nb.master == null)
+					{
+						nb.master = mnb;
+						nb.master.observers++;
+						++num_bonds;
+					}
+					else if(nb.master != mnb)
+					{
+						System.out.println("Shit, nb.master != mnb while placing central 5-ring");
+					}
+					if(na.master == null)
+					{
+						na.master = mna;
+						na.master.observers++;
+						++num_atoms;
+					}
+					else if(na.master != mna)
+					{
+						System.out.println("Shit, na.master != mna while placing central 5-ring");
+					}
+					
+					nb = na.get_other_bond(r5,nb);
+					mnb = mna.get_other_bond(mr5,mnb);
+					na = nb.get_other_atom(na);
+					mna = mnb.get_other_atom(mna);	
+				} 
+				if( (num_bonds != 5) || (num_atoms != 5) )
+				{
+					System.out.println("Ups, just put a 5-ring and got " + num_atoms + " vertices and " + num_bonds + " edges" );
+				}
+				//push_atom_relations();
+				//r5.master.sort_all();
+				
+				if( !validate_master_ring(r5) )
+				{
+					System.out.println("Ups something went wrong identifieying the first ring on an already populated joined mesh");
+					r5.debug_info();
+					r5.master.debug_info();
+					removefrom_master(); 
+					//clean_up_master_mesh();
+					return;
+				}
+		
+			}
+			
+			
+			if(sam == null) //provide a seeding ring that will contain the signature.atom anyways
+			{ //no checks here as it ought to be part of a valid signature anyways
+				if(master_mesh.atoms.size() > 0)
+				{
+					System.out.println("Error mastermesh containes atoms, but signature atoms did not lign up");
+				}
+				
+				Ring r0 = sa.rings.get(0); 
+				r0.master = master_mesh.put_ring();
+				r0.master.observers = 1;
+				r0.master.pos = Arrays.copyOf(r0.pos,3);
+				r0.master.is_interior = true;
+				r0.master.is_closed = true;
+				r0.master.radius = r0.radius;
+				for(int i = 0; i < r0.vertices.size(); ++i)
+				{
+					Atom ai = r0.vertices.get(i);
+					ai.master = master_mesh.put_atom();
+					ai.master.observers = 1;
+					ai.master.pos = Arrays.copyOf(ai.pos,3);
+					ai.master.is_interior = ai.is_interior;
+					ai.master.shortest_distsqr = ai.shortest_distsqr;
+					r0.master.vertices.add(ai.master);
+					ai.master.rings.add(r0.master);
+				}
+				for(int i = 0; i < r0.edges.size(); ++i)
+				{
+					Bond bi = r0.edges.get(i);
+					bi.master = master_mesh.put_bond();
+					bi.master.observers = 1;
+					bi.master.pos = Arrays.copyOf(bi.pos,3);
+					bi.master.is_interior = bi.is_interior;
+					r0.master.edges.add(bi.master);
+					bi.master.left_ring = r0.master;
+					bi.master.a1 = bi.a1.master;
+					bi.master.a2 = bi.a2.master;
+					
+					bi.master.a1.neighbors.add(bi.master.a2);
+					bi.master.a2.neighbors.add(bi.master.a1);
+					bi.master.a1.edges.add(bi.master);
+					bi.master.a2.edges.add(bi.master);	
+				}
+				//push_atom_relations();
+				r0.master.sort_all();
+				sam = sa.master;
+				//r0.master still has no neighbors	
+				
+				if( !validate_master_ring(r0) )
+				{
+					System.out.println("Ups created a faulty seed ring - master pair");
+					r0.debug_info();
+					r0.master.debug_info();
+					removefrom_master(); 
+					//clean_up_master_mesh();
+					return;
+				}
+			
+			
 			}
 		
-		
+		}
+		else
+		{
+			System.out.println("adding mesh by force to master");
+			System.out.println("atoms: " + atoms.size());
+			System.out.println("bonds: " + bonds.size());
+			System.out.println("rings: " + rings.size());
+			
+			System.out.println("master currently has");
+			System.out.println("atoms: " + master_mesh.atoms.size());
+			System.out.println("bonds: " + master_mesh.bonds.size());
+			System.out.println("rings: " + master_mesh.rings.size());
+			
+			push_atom_relations(); 
+			
+			System.out.println("pushed atoms bonds and rings to master");
 		}
 		
 		
@@ -3656,8 +3681,6 @@ public class SurfaceMesh
 		shift[0] = sam.pos[0]-sa.pos[0];
 		shift[1] = sam.pos[1]-sa.pos[1];
 		shift[2] = sam.pos[2]-sa.pos[2];
-                
-                manual_init();
 		/*
 		System.out.println("shift between mesh: " + impSlice + " and master mesh x,y,z: " +
 		 (int)shift[0] + "," + (int)shift[1] + "," + (int)shift[2]);
@@ -4042,46 +4065,53 @@ public class SurfaceMesh
 		
 	
 	}
-        
-        public void manual_init()
-        {
-            
-        }
 	
 	//no observations counting/mastering here, just push neighbor and edge relations to master_mesh
 	private void push_atom_relations()  
 	{
+		System.out.println("pushing atoms");
 		for(int i = 0; i < atoms.size(); ++i)
 		{
 			final Atom atomi = atoms.get(i);
-			if( (atomi.is_interior) && atomi.master!=null)
+			if(atomi.master!=null)
 			{
-				for(int k = 0; k < atomi.neighbors.size(); ++k)
-				{
-					Atom ak = atomi.neighbors.get(k);
-					if( (ak.master != null) && (!atomi.master.neighbors.contains(ak.master)) )
-					{
-						atomi.master.neighbors.add(ak.master);
-					}
-				}	
-				for(int k = 0; k < atomi.edges.size(); ++k)	
+				int atedges = atomi.edges.size();
+				int atmedges = atomi.master.edges.size();
+				
+				System.out.println("looking for bonds around atom: " + atomi.id +"|"+ atomi.master.id + " edges: " + atedges  + "|" + atmedges);
+				
+				for(int k = 0; k < atedges; ++k)	
 				{	
 					Bond bk = atomi.edges.get(k);
-					if( (bk.master != null) && (!atomi.master.edges.contains(bk.master)) )
+					Atom other = bk.get_other_atom(atomi);
+					if(other == null)
+					System.out.println("Shit");
+					
+					for(int m = 0; m < atmedges; ++m)
 					{
-						atomi.master.edges.add(bk.master);
+						Bond bm = atomi.master.edges.get(m);
+						Atom om = bm.get_other_atom(atomi.master);
+						if(om==null)
+						System.out.println("Shit");
+						
+						if(other.master == om)
+						{
+							bk.master = bm;
+							System.out.println("\tfound bond in master at edge: " + k + " and other edge: " + m);
+						}
+						
+						
+					
 					}
+					 	
 				}	
-				for(int k = 0; k < atomi.rings.size(); ++k)	
-				{	
-					Ring rk = atomi.rings.get(k);
-					if( (rk.master != null) && (!atomi.master.rings.contains(rk.master)) )
-					{
-						atomi.master.rings.add(rk.master);
-					}		
-				}
 			}
+			else
+			{
+				System.out.println("atom:" + atomi.id + " has no master");
+			}		
 		}
+		//next go over all bonds and identify the rings
 		
 	}
 	
@@ -4090,39 +4120,42 @@ public class SurfaceMesh
 	private void removefrom_master()
 	{
 		//this has also be done for detached atoms
-		for(int i=0; i < atoms.size(); ++i)
+		if(!keep_atom_masters)
 		{
-			Atom ma = atoms.get(i).master;
-			if( (ma != null) && master_mesh.atoms.contains(ma) && (!ma.detached) )
+			for(int i=0; i < atoms.size(); ++i)
 			{
-				atoms.get(i).master = null;
-				if( (ma.observers > 0) && (--ma.observers < 1) )
-				{	ma.detach();}
+				Atom ma = atoms.get(i).master;
+				if( (ma != null) && master_mesh.atoms.contains(ma) && (!ma.detached) )
+				{
+					atoms.get(i).master = null;
+					if( (ma.observers > 0) && (--ma.observers < 1) )
+					{	ma.detach();}
+				}
 			}
+			//In thoery detaching all atoms should fully suffice
+			//TODO test if the other two loops can be omitted
+			for(int i=0; i < bonds.size(); ++i)
+			{
+				Bond ma = bonds.get(i).master;
+				if( (ma != null) && master_mesh.bonds.contains(ma) && (!ma.detached) )
+				{
+					bonds.get(i).master = null;
+					if( (ma.observers > 0) && (--ma.observers < 1) )
+					{	ma.detach();}
+				}
+			}	
+			for(int i=0; i < rings.size(); ++i)
+			{
+				Ring ma = rings.get(i).master;
+				if( (ma != null) && master_mesh.atoms.contains(ma) && (!ma.detached) )
+				{
+					rings.get(i).master = null;
+					if( (ma.observers > 0) && (--ma.observers < 1) )
+					{	ma.detach();}
+				}
+			}		
+			clean_up_master_mesh();
 		}
-		//In thoery detaching all atoms should fully suffice
-		//TODO test if the other two loops can be omitted
-		for(int i=0; i < bonds.size(); ++i)
-		{
-			Bond ma = bonds.get(i).master;
-			if( (ma != null) && master_mesh.bonds.contains(ma) && (!ma.detached) )
-			{
-				bonds.get(i).master = null;
-				if( (ma.observers > 0) && (--ma.observers < 1) )
-				{	ma.detach();}
-			}
-		}	
-		for(int i=0; i < rings.size(); ++i)
-		{
-			Ring ma = rings.get(i).master;
-			if( (ma != null) && master_mesh.atoms.contains(ma) && (!ma.detached) )
-			{
-				rings.get(i).master = null;
-				if( (ma.observers > 0) && (--ma.observers < 1) )
-				{	ma.detach();}
-			}
-		}		
-		clean_up_master_mesh();
 	}
 	
 	private boolean validate_master_ring(Ring ringi)
